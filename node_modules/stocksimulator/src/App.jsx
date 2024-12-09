@@ -1,7 +1,6 @@
 import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
 import Graph from './components/graph'
+import { BalanceBar } from './components/balance'
 import './styling/App.css'
 
 function App() {
@@ -9,9 +8,15 @@ function App() {
   return (
     <>
       <div className='flex'>
-        <div className='graph'>
-          <Graph/>
+        <div className='header'>
+          <BalanceBar/>
         </div>
+        <div className='body'>
+          <div className='graph'>
+            <Graph/>
+          </div>
+        </div>
+        
       </div>
       
     </>

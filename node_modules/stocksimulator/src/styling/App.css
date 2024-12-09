@@ -9,3 +9,8 @@
   /* Add a height and maintain aspect ratio */
   height: 600px; /* Adjust as needed */
 }
+.flex{
+  display:flex;
+  flex-direction: column;
+  background-color: lightblue;
+}

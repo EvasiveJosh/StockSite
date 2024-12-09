@@ -8,7 +8,7 @@ Enter Diectory StockSimulator
 in terminal -> cd ./stockSimulator
 
 Step 2:
-install required packages -> npm install react babel cors express jsdom node node-fetch@2.7.0 react react-dom sqlite3 jest-environment-jsdom
+install required packages -> npm install react babel cors express jsdom node node-fetch@2.7.0 react react-dom sqlite3 jest-environment-jsdom jsonwebtoken
 
 Step 3:
 in Terminal type "npm run dev" and go to URL it provides
