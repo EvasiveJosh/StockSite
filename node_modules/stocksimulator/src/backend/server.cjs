@@ -2,11 +2,9 @@ const express = require('express');
 const cors = require('cors');
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
-const jwt = require('jsonwebtoken');
 
 const app = express();
 const PORT = 5069;
-const SECRET_KEY = 'testKey'; //token-key
 
 //middleware
 app.use(cors());
@@ -22,148 +20,183 @@ const db = new sqlite3.Database(dbPath, (err) => {
   }
 });
 
-//authentication middleware
-const authenticateUser = (req, res, next) => {
-  const token = req.headers.authorization?.split(' ')[1]; //extract token from "Bearer <token>"
-
-  if (!token) {
-    return res.status(401).json({ error: 'Unauthorized. No token provided.' });
-  }
-
-  jwt.verify(token, SECRET_KEY, (err, decoded) => {
-    if (err) {
-      return res.status(403).json({ error: 'Invalid or expired token.' });
-    }
-
-    req.user = decoded; //attach decoded user info to the request
-    next();
-  });
-};
-
-//user login endpoint
+// API endpoint for user login
 app.post('/login', (req, res) => {
-  const { username, password } = req.body;
+  const { email, password } = req.body;
 
-  if (!username || !password) {
-    return res.status(400).json({ error: 'Username and password are required.' });
-  }
-
-  //check credentials in the database
   db.get(
-    'SELECT * FROM users WHERE username = ? AND password = ?',
-    [username, password],
+    'SELECT * FROM users WHERE email = ? AND password = ?',
+    [email, password],
     (err, user) => {
       if (err) {
-        return res.status(500).json({ error: 'Database error.' });
+        return res.status(500).json({ error: 'Database error' });
       }
       if (!user) {
-        return res.status(401).json({ error: 'Invalid username or password.' });
+        return res.status(401).json({ error: 'Invalid email or password' });
       }
-
-      //generate JWT token
-      const token = jwt.sign({ id: user.user_id, username: user.username }, SECRET_KEY, { expiresIn: '1h' });
-
-      res.status(200).json({ token });
+      res.json({ message: 'Login successful', user });
     }
   );
 });
 
-//get user balance
-app.get('/get-balance', authenticateUser, (req, res) => {
-  const userId = req.user.id;
+//add user API
+app.post('/add-user', (req, res) => {
+  const { username, email, password } = req.body;
 
-  db.get('SELECT balance FROM users WHERE user_id = ?', [userId], (err, row) => {
+  //validate input
+  if (!username || !email || !password) {
+    return res.status(400).json({ error: 'All fields are required.' });
+  }
+
+  try {
+    //not hashing passwords for development purposes
+    //insert the user into the database
+    const sql = `
+      INSERT INTO users (username, email, password, balance)
+      VALUES (?, ?, ?, ?)
+    `;
+    const initialBalance = 10000; //initial starting balance
+    
+    db.run(sql, [username, email, password, initialBalance], function (err) {
+      if (err) {
+        if (err.message.includes('UNIQUE constraint failed')) {
+          return res.status(400).json({ error: 'Email already exists.' });
+        }
+        return res.status(500).json({ error: 'Error adding user to the database.' });
+      }
+
+      res.status(201).json({
+        message: 'User successfully registered.',
+        id: this.lastID, //return the newly created user's ID
+      });
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Error processing the request.' });
+  }
+});
+
+//buy Stock API
+app.post('/buy-stock', (req, res) => {
+  const { user_id, stock_id, quantity } = req.body;
+
+  if (!user_id || !stock_id || !quantity || quantity <= 0) {
+    return res.status(400).json({ error: 'Invalid input. Please provide valid user_id, stock_id, and quantity.' });
+  }
+
+  //check if the user exists
+  db.get('SELECT * FROM users WHERE user_id = ?', [user_id], (err, user) => {
     if (err) {
+      return res.status(500).json({ error: 'Error querying user.' });
+    }
+    if (!user) {
+      return res.status(404).json({ error: 'User not found.' });
+    }
+
+    //check if the stock exists
+    db.get('SELECT * FROM stocks WHERE stock_id = ?', [stock_id], (err, stock) => {
+      if (err) {
+        return res.status(500).json({ error: 'Error querying stock.' });
+      }
+      if (!stock) {
+        return res.status(404).json({ error: 'Stock not found.' });
+      }
+
+      const totalCost = stock.price * quantity;
+
+      //check if the user has enough balance
+      if (user.balance < totalCost) {
+        return res.status(400).json({ error: 'Insufficient balance.' });
+      }
+
+      //deduct balance and insert the purchase
+      db.run(
+        'UPDATE users SET balance = balance - ? WHERE user_id = ?',
+        [totalCost, user_id],
+        (err) => {
+          if (err) {
+            return res.status(500).json({ error: 'Error updating balance.' });
+          }
+
+          const sql = `
+            INSERT INTO purchases (user_id, stock_id, quantity)
+            VALUES (?, ?, ?)
+          `;
+          db.run(sql, [user_id, stock_id, quantity], function (err) {
+            if (err) {
+              return res.status(500).json({ error: 'Error inserting purchase.' });
+            }
+            return res.status(201).json({
+              message: 'Stock purchased successfully!',
+              purchase_id: this.lastID,
+            });
+          });
+        }
+      );
+    });
+  });
+});
+
+
+//query stocks owned by user API
+app.get('/user-stocks/:user_id', (req, res) => {
+    const { user_id } = req.params;
+  
+    //input validation
+    if (!user_id) {
+      return res.status(400).json({ error: 'Invalid input. Please provide a valid user_id.' });
+    }
+  
+    //query to get all stocks owned by the user
+    const sql = `
+      SELECT s.stock_id, s.stock_name, s.stock_symbol, p.quantity
+      FROM purchases p
+      JOIN stocks s ON p.stock_id = s.stock_id
+      WHERE p.user_id = ?
+    `;
+  
+    db.all(sql, [user_id], (err, rows) => {
+      if (err) {
+        return res.status(500).json({ error: 'Error querying user stocks.' });
+      }
+      if (rows.length === 0) {
+        return res.status(404).json({ error: 'No stocks found for the user.' });
+      }
+  
+      return res.status(200).json({
+        user_id,
+        stocks: rows,
+      });
+    });
+});
+//users balance API
+app.get('/get-balance/:user_id', (req, res) => {
+  const { user_id } = req.params;
+
+  //validate input
+  if (!user_id) {
+    return res.status(400).json({ error: 'Invalid user ID.' });
+  }
+
+  //query the database for the user's balance
+  db.get('SELECT balance FROM users WHERE user_id = ?', [user_id], (err, row) => {
+    if (err) {
+      console.error('Database error:', err.message);
       return res.status(500).json({ error: 'Error retrieving balance.' });
     }
     if (!row) {
       return res.status(404).json({ error: 'User not found.' });
     }
 
+    //return only the balance
     res.status(200).json({ balance: row.balance });
   });
 });
 
-//buy stock endpoint
-app.post('/buy-stock', authenticateUser, (req, res) => {
-  const user_id = req.user.id;
-  const { stock_id, quantity } = req.body;
 
-  if (!stock_id || !quantity || quantity <= 0) {
-    return res.status(400).json({ error: 'Invalid input. Please provide valid stock_id and quantity.' });
-  }
-
-  db.get('SELECT * FROM stocks WHERE stock_id = ?', [stock_id], (err, stock) => {
-    if (err) {
-      return res.status(500).json({ error: 'Error querying stock.' });
-    }
-    if (!stock) {
-      return res.status(404).json({ error: 'Stock not found.' });
-    }
-
-    const totalCost = stock.price * quantity;
-
-    db.get('SELECT balance FROM users WHERE user_id = ?', [user_id], (err, user) => {
-      if (err) {
-        return res.status(500).json({ error: 'Error querying user balance.' });
-      }
-      if (!user || user.balance < totalCost) {
-        return res.status(400).json({ error: 'Insufficient balance.' });
-      }
-
-      db.run('UPDATE users SET balance = balance - ? WHERE user_id = ?', [totalCost, user_id], (err) => {
-        if (err) {
-          return res.status(500).json({ error: 'Error updating balance.' });
-        }
-
-        const sql = `
-          INSERT INTO purchases (user_id, stock_id, quantity)
-          VALUES (?, ?, ?)
-        `;
-        db.run(sql, [user_id, stock_id, quantity], function (err) {
-          if (err) {
-            return res.status(500).json({ error: 'Error inserting purchase.' });
-          }
-          return res.status(201).json({
-            message: 'Stock purchased successfully!',
-            purchase_id: this.lastID,
-          });
-        });
-      });
-    });
-  });
-});
-
-//query stocks owned by user
-app.get('/user-stocks', authenticateUser, (req, res) => {
-  const user_id = req.user.id;
-
-  const sql = `
-    SELECT s.stock_id, s.stock_symbol, s.company_name, p.quantity
-    FROM purchases p
-    JOIN stocks s ON p.stock_id = s.stock_id
-    WHERE p.user_id = ?
-  `;
-
-  db.all(sql, [user_id], (err, rows) => {
-    if (err) {
-      return res.status(500).json({ error: 'Error querying user stocks.' });
-    }
-    if (rows.length === 0) {
-      return res.status(404).json({ error: 'No stocks found for the user.' });
-    }
-
-    return res.status(200).json({
-      user_id,
-      stocks: rows,
-    });
-  });
-});
 
 //export db for external use
 module.exports = db;
 
-//start the server
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
 });

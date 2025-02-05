@@ -1,24 +1,21 @@
 import React, { useState, useEffect } from "react";
+import '../styling/balancebar.css'
 
-export const BalanceBar = () => {
+export const BalanceBar = ( {userId} ) => {
   const [balance, setBalance] = useState(null);
   const [error, setError] = useState(null);
 
   useEffect(() => {
     const fetchBalance = async () => {
       try {
-        const token = localStorage.getItem("token"); //assumes the token is stored in localStorage
 
-        if (!token) {
-          setError("User not authenticated.");
+        if (!userId) {
+          setError("User ID not found. Please log in.");
           return;
         }
 
-        const response = await fetch("http://localhost:5069/get-balance", {
+        const response = await fetch(`http://localhost:5069/get-balance/${userId}`, {
           method: "GET",
-          headers: {
-            Authorization: `Bearer ${token}`, //include the token in the Authorization header
-          },
         });
 
         if (!response.ok) {
@@ -30,7 +27,7 @@ export const BalanceBar = () => {
         const data = await response.json();
         setBalance(data.balance);
       } catch (err) {
-        setError("An error occurred while fetching balance.");
+        setError("An error occurred while fetching the balance.");
       }
     };
 
@@ -38,7 +35,7 @@ export const BalanceBar = () => {
   }, []);
 
   return (
-    <div>
+    <div className="text">
       {error ? (
         <p style={{ color: "red" }}>Error: {error}</p>
       ) : balance !== null ? (

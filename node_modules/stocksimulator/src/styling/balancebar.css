@@ -1,0 +1,9 @@
+.balancebar{
+    border: 1px solid hsl(0 0% 80%);
+    box-shadow: 1.5rem;
+    max-width: 250px;
+    border-color: gold;
+}
+.text{
+    padding-left: 15px;
+}

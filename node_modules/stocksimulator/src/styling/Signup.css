@@ -1,0 +1,12 @@
+/* Container to center the signup form */
+.flex {
+    display: flex;
+    flex-direction: column;
+    align-items: center; 
+    background-color: lightgray;
+    border-radius: 10px;
+    width: 100%;
+    padding: 20px;
+    margin-top: 20px;
+  }
+
